@@ -1,0 +1,14 @@
+---
+title: "Reproducible Research - Assignment 2"
+author: "Brian K"
+date: "August 21, 2014"
+output: html_document
+---
+
+This is a project being done for the Reproducible Research class offered as part of the Data Science Specialization offered by Johns Hopkins and Coursera.
+
+Directions from the assignment are represented in italics.
+
+Project uses the following packages:
+
+
