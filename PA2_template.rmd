@@ -1,5 +1,5 @@
 ---
-title: "Reproducible Research - Assignment 2"
+title: "Health and Economic Impacts of Weather Events in the United States"
 author: "Brian K"
 date: "August 21, 2014"
 output: html_document
@@ -7,8 +7,83 @@ output: html_document
 
 This is a project being done for the Reproducible Research class offered as part of the Data Science Specialization offered by Johns Hopkins and Coursera.
 
-Directions from the assignment are represented in italics.
+###Synopis
+
+
+###Methods and Tools Used
 
 Project uses the following packages:
+
+```{r}
+library(plyr)
+library(reshape2)
+library(lubridate)
+library(gsubfn)
+```
+
+###Data Processing
+
+The following download was run in R to extract the data. It is not run as part of this document in case you prefer to download your data by another method.
+
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", "./data/StormData.csv.bz2")
+
+```{r}
+#read the data
+events <- read.csv("./data/StormData.csv.bz2")
+
+#create copy of data and create year objects of the date variables
+events2 <- events
+events2$BGN_DATE <- as.Date(events2$BGN_DATE, format = "%m/%d/%Y %H:%M:%S")
+events2$END_DATE <- as.Date(events2$END_DATE, format = "%m/%d/%Y %H:%M:%S")
+events2$bgn.year <- as.numeric(format(events2$BGN_DATE, "%Y"))
+events2$end.year <- as.numeric(format(events2$END_DATE, "%Y"))
+
+#eliminate all data prior to 1996 as only Tornado, Thunderstorm Wind and Hail were recorded prior to 1996 according to storm database details at http://www.ncdc.noaa.gov/stormevents/details.jsp
+events2 <- events2[events2$bgn.year >= 1996, ]
+
+#create damage variables
+events2$PROPDMGEXP <- gsub("0", "", events2$PROPDMGEXP)
+events2$PROPDMGEXP <- gsub("K", 1000, events2$PROPDMGEXP)
+events2$PROPDMGEXP <- gsub("B", 1000000000, events2$PROPDMGEXP)
+events2$PROPDMGEXP <- gsub("M", 1000000, events2$PROPDMGEXP)
+events2$propertydmg <- as.integer(events2$PROPDMG) * as.integer(events2$PROPDMGEXP)
+
+events2$CROPDMGEXP <- gsub("k|K", 1000, events2$CROPDMGEXP)
+events2$CROPDMGEXP <- gsub("B", 1000000000, events2$CROPDMGEXP)
+events2$CROPDMGEXP <- gsub("M", 1000000, events2$CROPDMGEXP)
+events2$cropdmg <- as.integer(events2$CROPDMG) * as.integer(events2$CROPDMGEXP)
+
+#eliminate unnecessary columns of data
+eventimpacts <- events2[ , c("BGN_DATE", "EVTYPE", "FATALITIES", "INJURIES", "propertydmg", "cropdmg", "REMARKS", "REFNUM", "bgn.year", "end.year")]
+
+#clean up variable names
+names(eventimpacts) <- c("bgndate", "eventtype", "fatalities", "injuries", "propertydmg", "cropdmg", "remarks", "referencenum", "bgnyear", "endyear" )
+
+###clean up event type names
+
+#simple clean up items
+
+eventimpacts$eventtypeclean <- as.factor(tolower(eventimpacts$eventtype))
+eventimpacts$eventtypeclean <- as.factor(gsub("tstm", "thunderstorm", eventimpacts$eventtypeclean))
+
+#create event damage and event health variables to aggregate impacts
+
+eventimpacts$eventdamage <- ddply(eventimpacts, .(refnum), summarize, event = sum(FATALITIES))
+
+eventimpacts$eventhealth <- ddply(eventimpacts, .(eventtypeclean), summarize, healthevents = sum(as.numeric(fatalities), as.numeric(injuries), na.rm = TRUE))
+
+#eliminate nonimpact event types from eventimpacts
+eventimpacts <- subset(eventimpacts, !( eventimpacts$eventtypeclean %in% nonimpactlist))
+```
+
+test <- summary(eventimpacts$eventtype)
+eventdamage <- ddply(events2, .(EVTYPE), summarize, FATALITIES = sum(FATALITIES))
+summaryData <- dcast(events2, EVTYPE ~ bgn.year)
+
+###Results
+
+#####Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+#####Across the United States, which types of events have the greatest economic consequences?
 
 
