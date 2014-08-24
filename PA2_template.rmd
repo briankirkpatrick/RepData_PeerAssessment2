@@ -1,5 +1,5 @@
 ---
-title: "Health and Economic Impacts of Weather Events in the United States"
+title: "Health and Economic Impacts of Weather Events in the United States from 1996 - 2011"
 author: "Brian K"
 date: "August 21, 2014"
 output: html_document
@@ -9,28 +9,53 @@ This is a project being done for the Reproducible Research class offered as part
 
 ###Synopis
 
+What follows is a brief review of the NOAA Storm database. The main drive of this initial research was to get familiar with and organize the data as well as provide some initial high level findings so that others could reuse the initial data cleaning and expand on further lines of inquiry.
+
+The data is focused on the most robust period of data in the database; from 1996 - 2011.
+
+The initial findings show an outsized weighting in human costs from Tornado events compared to all other events in the US from 1996 to 2011. While the economic impacts exhibit a more balanced spread, flooding is the largest single category over the exhibited time period.
 
 ###Methods and Tools Used
 
 Project uses the following packages:
 
 ```{r}
+library(lubridate)
 library(plyr)
 library(reshape2)
-library(lubridate)
-library(gsubfn)
+library(ggplot2)
+library(scales)
+library(xtable)
 ```
+
+Additional info/data can be found in the following github repo:
+
+https://github.com/briankirkpatrick/RepData_PeerAssessment2
 
 ###Data Processing
 
 The following download was run in R to extract the data. It is not run as part of this document in case you prefer to download your data by another method.
 
-download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", "./data/StormData.csv.bz2")
+code for downloading:   download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", "./data/StormData.csv.bz2")
+
+The data set exactly as downloaded is also included in the above referenced github repo.
+
+#####Reading the Data
+
+The data was read directly from the bz2 file without any preprocessing
 
 ```{r}
-#read the data
 events <- read.csv("./data/StormData.csv.bz2")
+```
 
+
+#####Cleaning the Data
+
+After reading the documentation provided at - http://www.ncdc.noaa.gov/stormevents/details.jsp - it was determined that the data prior to 1996 was not comprehensive enough for the purposes of identify the most costly weather events. All data prior to 1996 consists of only Tornado, Thunderstorm Wind and Hail events prior to recording all 48 weather events that are currnetly listed in the data dictionary for the database (found here https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf).
+
+Given the above information the first step in processing the data was to get the date variables into date format and subset the data to data beginning in 1996.
+
+```{r}
 #create copy of data and create year objects of the date variables
 events2 <- events
 events2$BGN_DATE <- as.Date(events2$BGN_DATE, format = "%m/%d/%Y %H:%M:%S")
@@ -38,52 +63,150 @@ events2$END_DATE <- as.Date(events2$END_DATE, format = "%m/%d/%Y %H:%M:%S")
 events2$bgn.year <- as.numeric(format(events2$BGN_DATE, "%Y"))
 events2$end.year <- as.numeric(format(events2$END_DATE, "%Y"))
 
-#eliminate all data prior to 1996 as only Tornado, Thunderstorm Wind and Hail were recorded prior to 1996 according to storm database details at http://www.ncdc.noaa.gov/stormevents/details.jsp
+#subset to data collections beginning in 1996
 events2 <- events2[events2$bgn.year >= 1996, ]
+```
 
-#create damage variables
+The data for property and crop damage was provided in two fields; an amount and a multiplier. Using the guidelines prodived in the data dictionary the multipliers were converted from symbols to numbers and new damage fields were created to show the whole dollar amounts of damages. 
+
+```{r}
+#convert multipliers
 events2$PROPDMGEXP <- gsub("0", "", events2$PROPDMGEXP)
 events2$PROPDMGEXP <- gsub("K", 1000, events2$PROPDMGEXP)
 events2$PROPDMGEXP <- gsub("B", 1000000000, events2$PROPDMGEXP)
 events2$PROPDMGEXP <- gsub("M", 1000000, events2$PROPDMGEXP)
-events2$propertydmg <- as.integer(events2$PROPDMG) * as.integer(events2$PROPDMGEXP)
-
 events2$CROPDMGEXP <- gsub("k|K", 1000, events2$CROPDMGEXP)
 events2$CROPDMGEXP <- gsub("B", 1000000000, events2$CROPDMGEXP)
 events2$CROPDMGEXP <- gsub("M", 1000000, events2$CROPDMGEXP)
-events2$cropdmg <- as.integer(events2$CROPDMG) * as.integer(events2$CROPDMGEXP)
 
+#create damage fields
+events2$propertydmg <- as.integer(events2$PROPDMG) * as.integer(events2$PROPDMGEXP)
+events2$cropdmg <- as.integer(events2$CROPDMG) * as.integer(events2$CROPDMGEXP)
+```
+
+For the purposes of this initial analysis, there were a number of fields that were unnecessary and were removed in order to speed up processing time.
+
+```{r}
 #eliminate unnecessary columns of data
 eventimpacts <- events2[ , c("BGN_DATE", "EVTYPE", "FATALITIES", "INJURIES", "propertydmg", "cropdmg", "REMARKS", "REFNUM", "bgn.year", "end.year")]
 
 #clean up variable names
 names(eventimpacts) <- c("bgndate", "eventtype", "fatalities", "injuries", "propertydmg", "cropdmg", "remarks", "referencenum", "bgnyear", "endyear" )
-
-###clean up event type names
-
-#simple clean up items
-
-eventimpacts$eventtypeclean <- as.factor(tolower(eventimpacts$eventtype))
-eventimpacts$eventtypeclean <- as.factor(gsub("tstm", "thunderstorm", eventimpacts$eventtypeclean))
-
-#create event damage and event health variables to aggregate impacts
-
-eventimpacts$eventdamage <- ddply(eventimpacts, .(refnum), summarize, event = sum(FATALITIES))
-
-eventimpacts$eventhealth <- ddply(eventimpacts, .(eventtypeclean), summarize, healthevents = sum(as.numeric(fatalities), as.numeric(injuries), na.rm = TRUE))
-
-#eliminate nonimpact event types from eventimpacts
-eventimpacts <- subset(eventimpacts, !( eventimpacts$eventtypeclean %in% nonimpactlist))
 ```
 
-test <- summary(eventimpacts$eventtype)
-eventdamage <- ddply(events2, .(EVTYPE), summarize, FATALITIES = sum(FATALITIES))
-summaryData <- dcast(events2, EVTYPE ~ bgn.year)
+After reviewing the reduced data sets, it was clear that there were far more event type names than corresponded with the names descriped in the data dictionary and these often include slightly different wordings, spelling errors or more specific detail than the database guidelines required.
+
+A number of steps were taken based on reviewing the names and those are detailed as follows.
+
+```{r}
+#eliminate case differences
+eventimpacts$eventtypeclean <- as.factor(tolower(eventimpacts$eventtype))
+
+#eliminate common abbreviations
+eventimpacts$eventtypeclean <- as.factor(gsub("tstm", "thunderstorm", eventimpacts$eventtypeclean))
+```
+
+After these initial steps, it was decided that the data could be reduced by removing any event types that had $0 damages to property/crops AND 0 injuries or fatalities.
+
+```{r}
+#create a summary of all property and crop damage by event type
+eventdamage <- ddply(eventimpacts, .(eventtypeclean), summarize, damage = sum(as.numeric(propertydmg), as.numeric(cropdmg), na.rm = TRUE))
+
+#create a summary of all injuries and fatalities by event type
+eventhealth <- ddply(eventimpacts, .(eventtypeclean), summarize, healthevents = sum(as.numeric(fatalities), as.numeric(injuries), na.rm = TRUE))
+
+#create a combined data set of health events and damages by event type
+eventsummary <- merge(eventdamage, eventhealth, by.x = "eventtypeclean", by.y = "eventtypeclean", all = TRUE)
+
+#create a reduced data set with only events that had damages and/or health events.
+impactevents <- eventsummary[eventsummary$damage > 0 | eventsummary$healthevents > 0, ]
+impacteventslist <- as.list(as.character(impactevents$eventtypeclean))
+
+impactdata <- eventimpacts[eventimpacts$eventtypeclean %in% impacteventslist, ]
+
+impactdata$eventtype <- factor(impactdata$eventtype)
+impactdata$eventtypeclean <- factor(impactdata$eventtypeclean)
+```
+
+At this point, it became clear that there would not be a uniform way of reducing the remaining 183 event types down to the core 48. The 183 event types were downloaded into a csv file (which can be found in the linked github repo) where judgement calls were made on which of the core 48 event types the remaining 183 should be labeled under. This index was then loaded into R and a new variable was created to house the "noaaeventtypes".
+
+```{r}
+#upload the index for name consolidation to the 48 recommended storm listings
+noaatypes <- read.csv("impactEventsListConversion.csv", header = TRUE, row.names = NULL)
+noaatypes <- noaatypes[ , 2:3]
+
+#create the new noaa event type variable
+list1 <- as.vector(as.character(noaatypes[ , 1]))
+list2 <- as.vector(as.character(noaatypes[ , 2]))
+list3 <- as.vector(as.character(impactdata$eventtypeclean))
+list4 <- mapvalues(list3, list1, list2, warn_missing = TRUE)
+                   
+impactdata$noaaeventtypes <- list4
+
+impactdata$noaaeventtypes <- factor(impactdata$noaaeventtypes)
+```
+
+With the data reduced to the core event types,  the final summary datasets for damages and health events were created.
+
+```{r}
+#create new damage and health summaries
+impactdamage <- ddply(impactdata, .(noaaeventtypes), summarize, damage = sum(as.numeric(propertydmg), as.numeric(cropdmg), na.rm = TRUE))
+impactdamage <- impactdamage[order(-impactdamage$damage), ]
+
+impacthealth <- ddply(impactdata, .(noaaeventtypes), summarize, healthevents = sum(as.numeric(fatalities), as.numeric(injuries), na.rm = TRUE))
+impacthealth <- impacthealth[order(-impacthealth$healthevents), ]
+```
 
 ###Results
 
 #####Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
 
+The following charts suggests that floods are the most costly US storm events when viewed on an aggregate basis from 1996 - 2011. However, there are significant monetary damages from tornados, hurricanes, flash floods, hail and drought.
+
+There are a vast number of ways in which we can parse this data further to determine things such as average cost per event, damage-by-type-by-year, difference between crop and property damage, variancance per event, damage by region, etc. The hope is that this summary will highlight the magnitude of the impact from weather events and provide the starting point for additional inquiry.
+
+```{r, fig.width = 10, fig.height= 8}
+g <- ggplot(impactdamage, aes(x = reorder(noaaeventtypes, damage),  y = damage))
+g <- g + geom_bar(stat = "identity", colour = "darkblue")
+g <- g + coord_flip()
+g <- g + labs(x = "Storm Event Type")
+g <- g + labs(y = "Monetary Damage Caused by Event (in USD $)")
+g <- g + labs(title = "Economic Impact of US Storm Events from 1996 - 2011")
+g <- g + theme(plot.title = element_text(face = "bold", size = 20))
+g <- g + theme(axis.title = element_text(face = "bold", size = 14))
+g <- g + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12))
+g <- g + theme(axis.text.y = element_text(size = 12))
+g <- g + scale_y_continuous(labels = comma)
+g
+```
+
+```{r showtable, results = "asis"}
+xdamage <- xtable(impactdamage[1:15, ])
+print(xdamage, type = "html")
+```
+
 #####Across the United States, which types of events have the greatest economic consequences?
 
+The following charts suggest much greater disparity between the top impacting event type and the remaining event types when compared to the economic data. Tornados, by far, take the greatest toll in human costs on the aggregate (when accounting for injuries and deaths) with dust storms and flooding a distant second and third.
 
+As stated in the economic damage section, there are a vast number of ways in which we can parse this data further, but the hope is that this summary will highlight the magnitude of the impact from weather events and provide the starting point for additional inquiry.
+
+```{r, fig.width = 10, fig.height= 8}
+g <- ggplot(impacthealth, aes(x = reorder(noaaeventtypes, healthevents),  y = healthevents))
+g <- g + geom_bar(stat = "identity", colour = "darkblue")
+g <- g + coord_flip()
+g <- g + labs(x = "Storm Event Type")
+g <- g + labs(y = "Number of Fatalies and Injuries Caused by Event")
+g <- g + labs(title = "Human Impact of US Storm Events from 1996 - 2011")
+g <- g + theme(plot.title = element_text(face = "bold", size = 20))
+g <- g + theme(axis.title = element_text(face = "bold", size = 14))
+g <- g + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12))
+g <- g + theme(axis.text.y = element_text(size = 12))
+g <- g + scale_y_continuous(labels = comma)
+g
+```
+
+```{r showtable2, results = "asis"}
+xhealth <- xtable(impacthealth[1:15, ])
+print(xhealth, type = "html")
+```
